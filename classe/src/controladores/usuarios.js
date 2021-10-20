@@ -1,4 +1,4 @@
-const conexao = require('../conexao');
+const knex = require('../conexao');
 const bcrypt = require('bcrypt');
 
 const cadastrarUsuario = async (req, res) => {
@@ -21,22 +21,30 @@ const cadastrarUsuario = async (req, res) => {
     }
 
     try {
-        const { rowCount: quantidadeUsuarios } = await conexao.query('select * from usuarios where email = $1', [email]);
+        const quantidadeUsuarios = await knex('usuarios').where('email', '=', email).returning('*').debug();
 
-        if (quantidadeUsuarios > 0) {
+        if (quantidadeUsuarios.length !== 0) {
             return res.status(400).json("O email já existe");
         }
 
         const senhaCriptografada = await bcrypt.hash(senha, 10);
 
-        const query = 'insert into usuarios (nome, email, senha, nome_loja) values ($1, $2, $3, $4)';
-        const usuario = await conexao.query(query, [nome, email, senhaCriptografada, nome_loja]);
+        const usuario = await knex('usuarios')
+            .insert(
+                {
+                    nome,
+                    email,
+                    senha: senhaCriptografada,
+                    nome_loja
+                })
+            .returning('*')
+            .debug();
 
-        if (usuario.rowCount === 0) {
+        if (usuario.length !== 1) {
             return res.status(400).json("O usuário não foi cadastrado.");
         }
 
-        return res.status(200).json("O usuario foi cadastrado com sucesso!");
+        return res.status(201).json(usuario[0]);
     } catch (error) {
         return res.status(400).json(error.message);
     }
@@ -54,53 +62,34 @@ const atualizarPerfil = async (req, res) => {
     }
 
     try {
-        // update usuarios set nome = $1, email = $2...
-        const body = {};
-        const params = [];
-        let n = 1;
-
-        if (nome) {
-            body.nome = nome;
-            params.push(`nome = $${n}`);
-            n++;
-        }
-
         if (email) {
             if (email !== req.usuario.email) {
-                const { rowCount: quantidadeUsuarios } = await conexao.query('select * from usuarios where email = $1', [email]);
+                const quantidadeUsuarios = await knex('usuarios').where('email', '=', email).returning('*').debug();
 
-                if (quantidadeUsuarios > 0) {
+                if (quantidadeUsuarios.length > 0) {
                     return res.status(400).json("O email já existe");
                 }
             }
-
-            body.email = email;
-            params.push(`email = $${n}`);
-            n++;
         }
 
-        if (senha) {
-            body.senha = await bcrypt.hash(senha, 10);
-            params.push(`senha = $${n}`);
-            n++;
-        }
+        const novaSenha = senha && await bcrypt.hash(senha, 10);
 
-        if (nome_loja) {
-            body.nome_loja = nome_loja;
-            params.push(`nome_loja = $${n}`);
-            n++;
-        }
+        const usuarioAtualizado = await knex('usuarios')
+            .update(
+                {
+                    nome,
+                    email,
+                    senha: novaSenha,
+                    nome_loja
+                })
+            .where('id', '=', req.usuario.id)
+            .returning('*')
+            .debug();
 
-        const valores = Object.values(body);
-        valores.push(req.usuario.id);
-        const query = `update usuarios set ${params.join(', ')} where id = $${n}`;
-        const usuarioAtualizado = await conexao.query(query, valores);
-
-        if (usuarioAtualizado.rowCount === 0) {
+        if (usuarioAtualizado.length === 0) {
             return res.status(400).json("O usuario não foi atualizado");
         }
-
-        return res.status(200).json('Usuario foi atualizado com sucesso.');
+        return res.status(200).json(usuarioAtualizado[0]);
     } catch (error) {
         return res.status(400).json(error.message);
     }
