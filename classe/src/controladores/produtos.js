@@ -5,15 +5,15 @@ const listarProdutos = async (req, res) => {
     const { categoria } = req.query;
 
     try {
-        let condicao = `select * from produtos where usuario_id = ${usuario.id}`;
+        const produtos = await knex('produtos')
+            .where({ usuario_id: usuario.id })
+            .where(query => {
+                if (categoria) {
+                    return query.where('categoria', 'ilike', `%${categoria}%`).debug();
+                }
+            });
 
-        if (categoria) {
-            condicao = `select * from produtos where usuario_id = ${usuario.id} and categoria ilike '%${categoria}%'`;
-        }
-
-        const produtos = await knex.raw(condicao).debug();
-
-        return res.status(200).json(produtos.rows);
+        return res.status(200).json(produtos);
     } catch (error) {
         return res.status(400).json(error.message);
     }
